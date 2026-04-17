@@ -143,54 +143,73 @@ class CoopScraper:
     def run_sync(self, test_mode=False):
         print(f"Starting sync at {datetime.now()}")
         
-        # 1. Load Sources
-        sources = []
-        with open(SOURCES_CSV, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            sources = list(reader)
+        try:
+            from pyairtable import Api
+        except ImportError:
+            print("pyairtable not found. Skipping sync.")
+            return
+
+        api = Api(AIRTABLE_API_KEY)
+        table_sources = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_SOURCES)
+        
+        # 1. Load Sources from Airtable (Master Source)
+        records = table_sources.all()
+        print(f"Loaded {len(records)} cooperatives from Airtable.")
 
         all_projects = []
 
-        for source in sources:
-            name = source['Genossenschaft']
-            raw_url = source['URL']
-            if not raw_url: continue
+        for record in records:
+            fields = record['fields']
+            name = fields.get('Name')
+            homepage = fields.get('Website')
+            overview_url = fields.get('Projektübersicht')
+            record_id = record['id']
+
+            if not name: continue
             
-            # Extract just the URL if there is surrounding text
-            # This regex looks for http(s) followed by non-whitespace, 
-            # but stops before trailing punctuation like . , ;
-            url_match = re.search(r"(https?://\S+[^.,; \n\r])", raw_url)
-            url = url_match.group(1) if url_match else raw_url
+            # Decide on the start URL for scanning
+            # If we don't have an overview URL but we have a homepage, discover it.
+            final_url = overview_url
+            is_new_discovery = False
+
+            if not final_url and homepage:
+                # Extract just the URL if there is surrounding text
+                url_match = re.search(r"(https?://\S+[^.,; \n\r])", homepage)
+                homepage_clean = url_match.group(1) if url_match else homepage
+                
+                final_url = self.find_overview_page(homepage_clean)
+                if final_url and final_url != homepage_clean:
+                    is_new_discovery = True
             
-            # DISCOVERY: If the URL is just a homepage, try to find the project page
-            if url.count('/') < 4: # Simple heuristic for homepage (e.g. domain.ch/ or domain.ch/de/)
-                url = self.find_overview_page(url)
-            
-            print(f"Scanning {name} -> {url}")
-            html = self.fetch_page(url)
+            if not final_url:
+                print(f"Skipping {name}: No overview URL or homepage found.")
+                continue
+
+            # Update Airtable if we discovered a NEW overview page
+            if is_new_discovery:
+                print(f"  Saving discovered overview for {name}: {final_url}")
+                table_sources.update(record_id, {"Projektübersicht": final_url})
+
+            print(f"Scanning {name} -> {final_url}")
+            html = self.fetch_page(final_url)
             if not html: continue
 
             # Discovery
-            project_links = self.discover_links(html, url)
+            project_links = self.discover_links(html, final_url)
             print(f"  Found {len(project_links)} potential project links")
 
             for p_url in project_links:
-                # In a real scenario, we'd skip already processed links
                 p_html = self.fetch_page(p_url)
                 if p_html:
                     details = self.extract_details(p_html, p_url)
                     details['cooperative'] = name
                     all_projects.append(details)
-                    if test_mode: break # Only scan one project in test mode
+                    if test_mode: break
             
-            if test_mode: break # Only scan one cooperative in test mode
+            if test_mode: break
 
-        # 2. Update Airtable (Simulated if NO credentials)
-        if AIRTABLE_API_KEY == "YOUR_KEY_HERE":
-            print("Airtable Sync SKIPPED (No credentials). Saving to Local CSV.")
-            self.save_to_csv(all_projects)
-        else:
-            self.push_to_airtable(all_projects)
+        # 2. Update Airtable Projects
+        self.push_to_airtable(all_projects)
 
     def save_to_csv(self, projects):
         keys = projects[0].keys() if projects else []
