@@ -64,29 +64,29 @@ class CoopScraper:
         LQ_KEYWORDS = ["siedlung", "wohnen", "vorgehen", "liegenschaft", "standort"]
 
         for a in soup.find_all('a', href=True):
-            href = a['href']
+            original_href = a['href']
+            original_href_lower = original_href.lower()
             text = a.get_text(separator=' ', strip=True).lower()
             
-            # Convert relative to absolute robustly
-            href = urljoin(base_url, href)
-            
-            full_path = href.lower()
-            combined_text = text + " " + full_path
-            
-            is_hq = any(k in combined_text for k in HQ_KEYWORDS)
-            is_lq = any(k in combined_text for k in LQ_KEYWORDS)
-            has_year = bool(re.search(r"(202[4-9]|203\d)", combined_text)) # Future year
+            # Match keywords ONLY in the original link or the link text
+            # This prevents the parent URL (base_url) from causing false positives in the child link
+            is_hq = any(k in text or k in original_href_lower for k in HQ_KEYWORDS)
+            has_year = bool(re.search(r"(202[4-9]|203\d)", text + " " + original_href_lower)) # Future year in text or link
             
             # DECISION LOGIC: 
             # - HQ keyword is always a YES.
             # - Future year is always a YES.
             # - LQ keyword ALONE is a NO (avoids existing settlements).
             if is_hq or has_year:
+                # Convert relative to absolute robustly for the final result
+                absolute_url = urljoin(base_url, original_href)
+                absolute_url_lower = absolute_url.lower()
+                
                 # Filter out obvious false positives
-                blacklisted = ["facebook", "instagram", "twitter", "linkedin", "youtube", "mailto:", "tel:", "javascript:", ".pdf", ".jpg", ".png", "google.com"]
-                if any(b in full_path for b in blacklisted):
+                blacklisted = ["facebook", "instagram", "twitter", "linkedin", "youtube", "mailto:", "tel:", "javascript:", ".pdf", ".jpg", ".png", "google.com", "impressum", "kontakt", "datenschutz", "lageplan", "cookies"]
+                if any(b in absolute_url_lower or b in text for b in blacklisted):
                     continue
-                links.add(href)
+                links.add(absolute_url)
         return links
 
     def find_overview_page(self, homepage_url):
@@ -98,18 +98,18 @@ class CoopScraper:
         possible_links = []
         
         for a in soup.find_all('a', href=True):
-            href = a['href']
+            original_href = a['href']
+            original_href_lower = original_href.lower()
             text = a.get_text(separator=' ', strip=True).lower()
-            # Convert relative to absolute robustly
-            href = urljoin(homepage_url, href)
             
-            # Score links based on keywords
+            # Score links based on keywords in text or original href
             score = 0
-            if any(k in text for k in PROJECT_TEXT_KEYWORDS): score += 2
-            if any(p.search(href) for p in PROJECT_LINK_PATTERNS): score += 1
+            if any(k in text or k in original_href_lower for k in PROJECT_TEXT_KEYWORDS): score += 2
+            if any(p.search(original_href_lower) for p in PROJECT_LINK_PATTERNS): score += 1
             
             if score > 0:
-                possible_links.append((score, href))
+                absolute_url = urljoin(homepage_url, original_href)
+                possible_links.append((score, absolute_url))
         
         if possible_links:
             # Sort by score descending and return the best one
