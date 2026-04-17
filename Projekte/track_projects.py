@@ -6,16 +6,19 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import csv
 from urllib.parse import urljoin
+import requests # For n8n webhook
 try:
     from dotenv import load_dotenv
     load_dotenv()
+    import google.generativeai as genai
 except ImportError:
     pass
 
 # --- CONFIGURATION ---
-# These would ideally come from environment variables in Coolify
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "YOUR_KEY_HERE")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "YOUR_BASE_HERE")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "") # Add your n8n webhook URL here
 AIRTABLE_TABLE_PROJECTS = "Projekte"
 AIRTABLE_TABLE_SOURCES = "Genossenschaften"
 
@@ -44,6 +47,9 @@ DATE_PHRASE_PATTERN = re.compile(r"(" + "|".join(MONTHS_AND_SEASONS) + r")\s+(20
 class CoopScraper:
     def __init__(self):
         self.client = httpx.Client(follow_redirects=True, timeout=10.0)
+        if GEMINI_API_KEY:
+            genai.configure(api_key=GEMINI_API_KEY)
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
     
     def fetch_page(self, url):
         try:
@@ -122,27 +128,60 @@ class CoopScraper:
 
     def extract_details(self, html, project_url):
         soup = BeautifulSoup(html, 'html.parser')
+        # Remove script and style elements
+        for script_or_style in soup(["script", "style"]):
+            script_or_style.decompose()
+            
         text = soup.get_text(separator=' ', strip=True)
         
-        # Look for external landing pages / rental pages
-        landing_page = None
+        # 1. AI Extraction (Gemini)
+        details = self.extract_with_gemini(text) if GEMINI_API_KEY else self.extract_with_regex(text)
+        
+        # 2. Add technical details
+        details["url"] = project_url
+        details["landing_page"] = self.find_landing_page(soup, project_url)
+        
+        return details
+
+    def extract_with_gemini(self, text):
+        prompt = f"""
+        Extrahiere folgende Informationen aus dem untenstehenden Text einer Wohnbaugenossenschaft-Projektseite in Zürich.
+        Antworte NUR im JSON-Format mit diesen Schlüsseln:
+        - name: Name des Projekts (kurz)
+        - baustart: Wann ist der Baustart / Spatenstich? (z.B. Q3 2025 oder 2024)
+        - bezug: Wann ist das Projekt bezugsbereit? (z.B. Frühling 2026 oder Ende 2025)
+        - vermietung: Wann beginnt die Vermietung / Anmeldung? (z.B. ab sofort, Q1 2025)
+
+        Text:
+        {text[:5000]} 
+        """
+        try:
+            response = self.model.generate_content(prompt)
+            # Find JSON in response
+            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+        except Exception as e:
+            print(f"Gemini error: {e}")
+        
+        return self.extract_with_regex(text)
+
+    def extract_with_regex(self, text):
+        return {
+            "name": "Unknown Project",
+            "baustart": self.find_date_near(text, "Baustart"),
+            "bezug": self.find_date_near(text, "Bezug") or self.find_date_near(text, "bezugsbereit"),
+            "vermietung": self.find_date_near(text, "Vermietung") or self.find_date_near(text, "Anmeldung")
+        }
+
+    def find_landing_page(self, soup, project_url):
         for a in soup.find_all('a', href=True):
             a_text = a.get_text(separator=' ', strip=True).lower()
             if any(k in a_text for k in ["projektwebseite", "projekt-webseite", "vermietung", "landingpage", "projektseite"]):
                 href = a['href']
                 if href.startswith('http') and project_url.split('/')[2] not in href: # External domain
-                    landing_page = href
-                    break
-
-        details = {
-            "name": soup.title.string.split('|')[0].strip() if soup.title else "Unknown Project",
-            "baustart": self.find_date_near(text, "Baustart"),
-            "bezug": self.find_date_near(text, "Bezug") or self.find_date_near(text, "bezugsbereit"),
-            "vermietung": self.find_date_near(text, "Vermietung") or self.find_date_near(text, "Anmeldung"),
-            "url": project_url,
-            "landing_page": landing_page
-        }
-        return details
+                    return href
+        return None
 
     def find_date_near(self, text, keyword):
         # Look for the keyword and then a year or phrase nearby (within 150 characters)
@@ -259,11 +298,12 @@ class CoopScraper:
         
         # 2. Get existing projects to avoid duplicates (using URL as the key)
         # Note: In your schema, the URL field is named 'URL'
+        # 2. Get existing projects with their current data for comparison
         existing_projects = table_projects.all()
-        url_to_id = {r['fields'].get('URL'): r['id'] for r in existing_projects if 'URL' in r['fields']}
+        url_to_record = {r['fields'].get('URL'): r for r in existing_projects if 'URL' in r['fields']}
 
         for p in projects:
-            # Prepare fields based on your Airtable schema
+            # Prepare new fields
             fields = {
                 "Projektname": p['name'],
                 "URL": p['url'],
@@ -272,7 +312,7 @@ class CoopScraper:
                 "Start Vermietung": p['vermietung'],
                 "Vermietungsseite": p.get('landing_page'),
                 "Status Bauprojekt": "Ausschreibung läuft" if p['baustart'] else "Projekt geplant",
-                "Notes 2": f"Automatisch aktualisiert am {datetime.now().strftime('%d.%m.%Y')}"
+                "Notes 2": f"Zuletzt geprüft am {datetime.now().strftime('%d.%m.%Y')}"
             }
             
             # Map the cooperative link
@@ -280,12 +320,44 @@ class CoopScraper:
             if coop_name in name_to_id:
                 fields["Genossenschaft"] = [name_to_id[coop_name]]
             
-            if p['url'] in url_to_id:
+            if p['url'] in url_to_record:
+                old_record = url_to_record[p['url']]
+                old_fields = old_record['fields']
+                
+                # Check for changes in key fields
+                changes = {}
+                for key, display in [("Zeitplan", "Baustart/Zeitplan"), ("Stat Bezug", "Bezug"), ("Start Vermietung", "Vermietungsstart")]:
+                    new_val = str(fields.get(key) or "").strip()
+                    old_val = str(old_fields.get(key) or "").strip()
+                    if new_val and old_val and new_val != old_val:
+                        changes[display] = {"old": old_val, "new": new_val}
+                
+                if changes:
+                    print(f"Detected changes for {p['name']}: {changes}")
+                    self.send_n8n_alert(p, changes)
+                    
                 print(f"Updating {p['name']}...")
-                table_projects.update(url_to_id[p['url']], fields)
+                table_projects.update(old_record['id'], fields)
             else:
                 print(f"Creating {p['name']}...")
                 table_projects.create(fields)
+
+    def send_n8n_alert(self, project, changes):
+        if not N8N_WEBHOOK_URL:
+            return
+            
+        payload = {
+            "project": project['name'],
+            "cooperative": project['cooperative'],
+            "url": project['url'],
+            "changes": changes,
+            "timestamp": datetime.now().isoformat()
+        }
+        try:
+            requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
+            print(f"Sent n8n alert for {project['name']}")
+        except Exception as e:
+            print(f"Failed to send n8n alert: {e}")
 
 if __name__ == "__main__":
     scraper = CoopScraper()
