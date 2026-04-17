@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gnossiZH | Belegungs-Rechner</title>
+    <style>
+        :root {
+            --primary: #007AFF;
+            --bg: #0a0a0c;
+            --card: #1c1c1e;
+            --text: #ffffff;
+            --text-muted: #8e8e93;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .calculator-card {
+            background-color: var(--card);
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .counter {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.05);
+            padding: 0.5rem;
+            border-radius: 12px;
+        }
+
+        .btn {
+            background: var(--primary);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:active {
+            opacity: 0.7;
+        }
+
+        .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .result-box {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, rgba(0,122,255,0.2), rgba(0,122,255,0.05));
+            border-radius: 15px;
+            border: 1px solid rgba(0,122,255,0.3);
+        }
+
+        .result-label {
+            font-size: 0.9rem;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .result-value {
+            font-size: 2rem;
+            font-weight: 800;
+        }
+
+        .cta {
+            margin-top: 2rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem;
+            width: 100%;
+            border-radius: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="calculator-card">
+    <h1>Zimmer-Rechner</h1>
+    <p class="subtitle">Finde deine ideale Genossenschafts-Grösse.</p>
+    
+    <div class="input-group">
+        <label>Erwachsene</label>
+        <div class="counter">
+            <button class="btn" onclick="change('adults', -1)">-</button>
+            <span class="value" id="adults">2</span>
+            <button class="btn" onclick="change('adults', 1)">+</button>
+        </div>
+    </div>
+
+    <div class="input-group">
+        <label>Kinder</label>
+        <div class="counter">
+            <button class="btn" onclick="change('kids', -1)">-</button>
+            <span class="value" id="kids">1</span>
+            <button class="btn" onclick="change('kids', 1)">+</button>
+        </div>
+    </div>
+
+    <div class="result-box">
+        <div class="result-label">Erlaubte Zimmeranzahl:</div>
+        <div class="result-value" id="result">3.5 - 4.5</div>
+    </div>
+
+    <button class="cta">Passende Inserate anzeigen</button>
+</div>
+
+<script>
+    let state = {
+        adults: 2,
+        kids: 1
+    };
+
+    function change(type, delta) {
+        state[type] = Math.max(0, state[type] + delta);
+        if (state.adults < 1) state.adults = 1; // Mind. 1 Erwachsener
+        document.getElementById(type).innerText = state[type];
+        update();
+    }
+
+    function update() {
+        const persons = state.adults + state.kids;
+        const minZimmer = persons;
+        const maxZimmer = persons + 1.5;
+        
+        let display = "";
+        if (persons === 1) {
+            display = "1.0 - 2.5";
+        } else {
+            display = `${persons}.0 - ${persons + 1.5}`;
+        }
+        
+        document.getElementById('result').innerText = display;
+    }
+</script>
+
+</body>
+</html>

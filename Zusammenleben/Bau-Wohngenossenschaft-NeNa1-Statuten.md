@@ -1,0 +1,8 @@
+---URL: https://nena1.ch/unser-plan/statuten/
+Genossenschaft: Bau- & Wohngenossenschaft NeNa1
+Typ Einträge: Statuten
+Select: PDF
+---
+Die Genossenschaft NeNa1 fördert eine gute soziale Durchmischung, indem sie in ihren Statuten explizit festhält, dass sie preisgünstigen Raum für Wohnen, Arbeiten und gemeinsame Nutzungen schafft und erhält. Sie strebt soziale und bauliche Strukturen an, die selbstverwaltete, existenzsichernde, ökologische und gemeinschaftliche Wohn-, Arbeits- und Lebensformen ermöglichen. Es wird ein lebenslanges Wohnrecht, behindertengerechtes und interkulturelles Wohnen angestrebt. Die Genossenschaft kann bei der Vermietung Quoten festsetzen, um eine Durchmischung zu gewährleisten. Damit wird auch auf verschiedene Altersgruppen, Einkommensschichten, Familien und junge Erwachsene Rücksicht genommen.
+
+Für das gute Zusammenleben gibt es eine interne Schlichtungskommission, die bei Konflikten angerufen werden kann und Vorschläge zur Lösung macht. Die Genossenschaft sieht eine verbindliche Mitwirkung der Bewohnenden beim Betrieb der Infrastruktur vor und stellt gemeinschaftlich betriebene Infrastruktur (Mikrozentrum) für alltägliche Dienstleistungen zur Verfügung. Die Statuten erwähnen keine expliziten Siedlungskommissionen oder ausgebildete Fachpersonen, aber die Verwaltung kann Kommissionen oder mandatierte Personen einsetzen. Die Finanzierung gemeinschaftlicher Aufgaben ist über die Genossenschaftsbeiträge, Fonds und die Kostenmiete geregelt. Räumlichkeiten für gemeinschaftliche Nutzungen sind Teil des Konzepts (z.B. Mikrozentrum, Gästehaus, gemeinschaftliche Infrastruktur).
