@@ -25,14 +25,20 @@ SOURCES_CSV = "/home/gravity-test/gnossiZH/Projekte/Projekte-Projektübersicht.c
 # Regex patterns for discovery and extraction
 PROJECT_LINK_PATTERNS = [re.compile(p, re.I) for p in [
     r"/projekt", r"/neubau", r"/areal", r"/bauvorhaben", r"/siedlung", 
-    r"/zukunft", r"/entwicklung", r"/zeitraum", r"/bau", r"/quartier"
+    r"/zukunft", r"/entwicklung", r"/zeitraum", r"/bau", r"/quartier",
+    r"/erstvermietung", r"/ersatzneubau", r"/etappe"
 ]]
 PROJECT_TEXT_KEYWORDS = [
     "projekt", "neubau", "bauvorhaben", "entwicklung", "zukunft", 
-    "areal", "zeitraum", "bau", "wohnen", "siedlung", "umbau", "category"
+    "areal", "zeitraum", "bau", "wohnen", "siedlung", "umbau", "category",
+    "erstvermietung", "ersatzneubau", "etappe", "bezugsbereit", "vermietung"
 ]
 DATE_PATTERN = re.compile(r"(20\d{2})") # Simple year extraction
-MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]
+MONTHS_AND_SEASONS = [
+    "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember",
+    "Frühling", "Sommer", "Herbst", "Winter", "Frühjahr"
+]
+DATE_PHRASE_PATTERN = re.compile(r"(" + "|".join(MONTHS_AND_SEASONS) + r")\s+(20\d{2})", re.I)
 
 class CoopScraper:
     def __init__(self):
@@ -50,6 +56,12 @@ class CoopScraper:
     def discover_links(self, html, base_url):
         soup = BeautifulSoup(html, 'html.parser')
         links = set()
+        
+        # High quality keywords that almost always mean a project
+        HQ_KEYWORDS = ["neubau", "ersatzneubau", "erstvermietung", "areal", "bauvorhaben", "planung", "projekt", "etappe"]
+        # Low quality keywords that need additional context
+        LQ_KEYWORDS = ["siedlung", "wohnen", "vorgehen", "liegenschaft", "standort"]
+
         for a in soup.find_all('a', href=True):
             href = a['href']
             text = a.get_text(separator=' ', strip=True).lower()
@@ -58,17 +70,21 @@ class CoopScraper:
             if href.startswith('/'):
                 href = f"{base_url.rstrip('/')}/{href.lstrip('/')}"
             
-            # Check URL for patterns
-            url_match = any(pattern.search(href) for pattern in PROJECT_LINK_PATTERNS)
+            full_path = href.lower()
+            combined_text = text + " " + full_path
             
-            # Check Link Text for keywords
-            text_match = any(keyword in text for keyword in PROJECT_TEXT_KEYWORDS)
+            is_hq = any(k in combined_text for k in HQ_KEYWORDS)
+            is_lq = any(k in combined_text for k in LQ_KEYWORDS)
+            has_year = bool(re.search(r"(202[4-9]|203\d)", combined_text)) # Future year
             
-            if url_match or text_match:
+            # DECISION LOGIC: 
+            # - HQ keyword is always a YES.
+            # - Future year is always a YES.
+            # - LQ keyword ALONE is a NO (avoids existing settlements).
+            if is_hq or has_year:
                 # Filter out obvious false positives
-                href_lower = href.lower()
-                blacklisted = ["facebook", "instagram", "twitter", "linkedin", "youtube", "mailto:", "tel:", "javascript:", ".pdf", ".jpg", ".png"]
-                if any(b in href_lower for b in blacklisted):
+                blacklisted = ["facebook", "instagram", "twitter", "linkedin", "youtube", "mailto:", "tel:", "javascript:", ".pdf", ".jpg", ".png", "google.com"]
+                if any(b in full_path for b in blacklisted):
                     continue
                 links.add(href)
         return links
@@ -121,23 +137,30 @@ class CoopScraper:
         details = {
             "name": soup.title.string.split('|')[0].strip() if soup.title else "Unknown Project",
             "baustart": self.find_date_near(text, "Baustart"),
-            "bezug": self.find_date_near(text, "Bezug"),
-            "vermietung": self.find_date_near(text, "Vermietung"),
+            "bezug": self.find_date_near(text, "Bezug") or self.find_date_near(text, "bezugsbereit"),
+            "vermietung": self.find_date_near(text, "Vermietung") or self.find_date_near(text, "Anmeldung"),
             "url": project_url,
             "landing_page": landing_page
         }
         return details
 
     def find_date_near(self, text, keyword):
-        # Look for the keyword and then a year nearby (within 100 characters)
+        # Look for the keyword and then a year or phrase nearby (within 150 characters)
         start_idx = text.lower().find(keyword.lower())
         if start_idx == -1:
             return None
         
-        fragment = text[start_idx : start_idx + 100]
-        match = DATE_PATTERN.search(fragment)
-        if match:
-            return match.group(1)
+        fragment = text[start_idx : start_idx + 150]
+        
+        # 1. Try to find a specific phrase like "Frühling 2025"
+        phrase_match = DATE_PHRASE_PATTERN.search(fragment)
+        if phrase_match:
+            return phrase_match.group(0)
+            
+        # 2. Fallback to just a year
+        year_match = DATE_PATTERN.search(fragment)
+        if year_match:
+            return year_match.group(1)
         return None
 
     def run_sync(self, test_mode=False):
