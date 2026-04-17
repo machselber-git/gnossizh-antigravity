@@ -5,6 +5,7 @@ import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime
 import csv
+from urllib.parse import urljoin
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -66,9 +67,8 @@ class CoopScraper:
             href = a['href']
             text = a.get_text(separator=' ', strip=True).lower()
             
-            # Convert relative to absolute
-            if href.startswith('/'):
-                href = f"{base_url.rstrip('/')}/{href.lstrip('/')}"
+            # Convert relative to absolute robustly
+            href = urljoin(base_url, href)
             
             full_path = href.lower()
             combined_text = text + " " + full_path
@@ -100,8 +100,8 @@ class CoopScraper:
         for a in soup.find_all('a', href=True):
             href = a['href']
             text = a.get_text(separator=' ', strip=True).lower()
-            if href.startswith('/'):
-                href = f"{homepage_url.rstrip('/')}/{href.lstrip('/')}"
+            # Convert relative to absolute robustly
+            href = urljoin(homepage_url, href)
             
             # Score links based on keywords
             score = 0
