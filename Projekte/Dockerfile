@@ -16,6 +16,9 @@ COPY . .
 # Environment variables (to be set in Coolify)
 ENV AIRTABLE_API_KEY=""
 ENV AIRTABLE_BASE_ID=""
+ENV GEMINI_API_KEY=""
+ENV N8N_WEBHOOK_URL=""
 
-# Run the script
-CMD ["python", "track_projects.py"]
+# Keep the container running in idle mode
+# This allows n8n to trigger the script manually without automatic start
+CMD ["tail", "-f", "/dev/null"]
